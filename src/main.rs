@@ -27,9 +27,45 @@ type GameEngine = Engine<(), StubNode>;
 // Our game logic will be updated at 60 Hz rate.
 const TIMESTEP: f32 = 1.0 / 60.0;
 
+#[derive(Default)]
+struct InputController {
+    move_forward: bool,
+    move_backward: bool,
+    move_left: bool,
+    move_right: bool,
+    pitch: f32,
+    yaw: f32
+}
+
+struct Player {
+    pivot: Handle<Node>,
+    camera: Handle<Node>,
+    rigid_body: RigidBodyHandle,
+    controller: InputController
+}
+
+impl Player {
+    fn new(scene: &mut Scene) -> Self {
+        let camera = CameraBuilder::new(
+            BaseBuilder::new()
+            .with_local_transform(
+                TransformBuilder::new()
+                .with_local_position(
+                    Vector3::new(0.0,0.25,0.0))
+                    .build()))
+                    .build(&mut scene.graph);
+    }
+    fn update(&mut self, scene: &mut Scene) {
+        todo!()
+    }
+    fn process_input_event(&mut self, event: &Event<()>) {
+        todo!()
+    }
+}
+
 struct Game {
     scene: Handle<Scene>,
-    camera: Handle<Node>,
+    player: Player,
 }
 
 impl Game {
@@ -45,25 +81,18 @@ impl Game {
             .await
             .unwrap()
             .instantiate_geometry(&mut scene);
-        let camera = CameraBuilder::new(
-            BaseBuilder::new().with_local_transform(
-                TransformBuilder::new()
-                    .with_local_position(Vector3::new(0.0, 1.0, -3.0))
-                    .build(),
-            ),
-        )
-        .build(&mut scene.graph);
         Self {
-            camera,
+            player: Player::new(&mut scene),
             scene: engine.scenes.add(scene),
         }
 
     }
 
     pub fn update(&mut self) {
-        // Game logic will be placed here.
+        self.player.update(&mut engine.scenes[self.scene]);
     }
 }
+
 
 fn main() {
     // Configure main window first.
@@ -84,6 +113,7 @@ fn main() {
 
     let mut elapsed_time = 0.0;
     event_loop.run(move |event, _, control_flow| {
+        game.player.process_input_event(&event);
         match event {
             Event::MainEventsCleared => {
                 // This main game loop - it has fixed time step which means that game
