@@ -28,12 +28,31 @@ type GameEngine = Engine<(), StubNode>;
 const TIMESTEP: f32 = 1.0 / 60.0;
 
 struct Game {
-    // Empty for now.
+    scene: Handle<Scene>,
+    camera: Handle<Node>,
 }
 
 impl Game {
-    pub fn new() -> Self {
-        Self {}
+    pub async fn new(engine: &mut GameEngine) -> Self {
+        let mut scene = Scene::new();
+        engine
+            .resource_manager
+            .request_model("assets/models/scene.rgs")
+            .await
+            .unwrap()
+            .instantiate_geometry(&mut scene);
+        let camera = CameraBuilder::new(
+            BaseBuilder::new().with_local_transform(
+                TransformBuilder::new()
+                    .with_local_position(Vector3::new(0.0, 1.0, -3.0))
+                    .build(),
+            ),
+        )
+        .build(&mut scene.graph);
+        Self {
+            camera,
+            scene: engine.scenes.add(scene),
+        }
     }
 
     pub fn update(&mut self) {
@@ -51,7 +70,7 @@ fn main() {
     let mut engine = GameEngine::new(window_builder, &event_loop, true).unwrap();
 
     // Initialize game instance. It is empty for now.
-    let mut game = Game::new();
+    let mut game = rg3d::futures::executor::block_on(Game::new(&mut engine));
 
     // Run the event loop of the main window. which will respond to OS and window events and update
     // engine's state accordingly. Engine lets you to decide which event should be handled,
@@ -92,7 +111,7 @@ fn main() {
                         *control_flow = ControlFlow::Exit
                     }
                 }
-			    WindowEvent::Resized(size) => {
+                WindowEvent::Resized(size) => {
                     // It is very important to handle Resized event from window, because
                     // renderer knows nothing about window size - it must be notified
                     // directly when window size has changed.
