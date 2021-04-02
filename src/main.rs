@@ -37,6 +37,10 @@ impl Game {
         let mut scene = Scene::new();
         engine
             .resource_manager
+            .state()
+            .set_textures_path("assets/textures");
+        engine
+            .resource_manager
             .request_model("assets/models/scene.rgs")
             .await
             .unwrap()
