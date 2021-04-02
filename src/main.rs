@@ -57,6 +57,7 @@ impl Game {
             camera,
             scene: engine.scenes.add(scene),
         }
+
     }
 
     pub fn update(&mut self) {
