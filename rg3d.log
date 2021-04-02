@@ -134,8 +134,6 @@
 	- Parsing - 2 ms
 	- DOM Prepare - 0 ms
 	- Conversion - 0 ms
-[ERROR]: Unable to load texture "data/textures/barrel_normal.jpg"! Reason Io(Os { code: 2, kind: NotFound, message: "No such file or directory" })
-[ERROR]: Unable to load texture "data/textures/barrel.jpg"! Reason Io(Os { code: 2, kind: NotFound, message: "No such file or directory" })
 [INFO]: Model "assets/models/barrel.FBX" is loaded!
 [INFO]: Starting resolve...
 [INFO]: Resolving graph...
@@ -170,31 +168,16 @@
 
 [INFO]: Shader GBufferShader linked!
 
-[INFO]: GL texture 23 was created!
-[INFO]: GL texture 24 was created!
-[INFO]: GL texture 25 was created!
-[INFO]: Shader FlatShader_VertexShader compiled!
-
-[INFO]: Shader FlatShader_FragmentShader compiled!
-
-[INFO]: Shader FlatShader linked!
-
-[INFO]: Shader SsaoShader_VertexShader compiled!
-
-[INFO]: Shader SsaoShader_FragmentShader compiled!
-
-[INFO]: Shader SsaoShader linked!
-
 [INFO]: GL texture 26 was created!
-[INFO]: GL texture 2 was destroyed!
-[INFO]: GL texture 1 was destroyed!
-[INFO]: GL texture 3 was destroyed!
-[INFO]: GL texture 1 was created!
-[INFO]: Texture resource "assets/textures/barrel.jpg" destroyed because it not used anymore!
-[INFO]: Texture resource "assets/textures/barrel_normal.jpg" destroyed because it not used anymore!
-[INFO]: GL texture 25 was destroyed!
-[INFO]: GL texture 24 was destroyed!
-[INFO]: GL texture 26 was destroyed!
+[INFO]: Texture "assets/textures/barrel_normal.jpg" is loaded in 60.710292ms!
+[INFO]: Texture "assets/textures/barrel.jpg" is loaded in 72.904456ms!
+[INFO]: GL texture 27 was created!
+[INFO]: GL texture 28 was created!
+[INFO]: Texture "assets/textures/floor.jpg" is loaded in 98.591103ms!
+[INFO]: GL texture 29 was created!
+[INFO]: GL texture 19 was destroyed!
+[INFO]: GL texture 18 was destroyed!
+[INFO]: GL texture 20 was destroyed!
 [INFO]: GL texture 4 was destroyed!
 [INFO]: GL texture 5 was destroyed!
 [INFO]: GL texture 6 was destroyed!
@@ -205,26 +188,28 @@
 [INFO]: GL texture 11 was destroyed!
 [INFO]: GL texture 12 was destroyed!
 [INFO]: GL geometry buffer was destroyed - VAO: 3!
+[INFO]: GL texture 13 was destroyed!
 [INFO]: GL texture 15 was destroyed!
 [INFO]: GL geometry buffer was destroyed - VAO: 1!
 [INFO]: GL geometry buffer was destroyed - VAO: 2!
 [INFO]: GL geometry buffer was destroyed - VAO: 4!
-[INFO]: GL texture 19 was destroyed!
-[INFO]: GL texture 20 was destroyed!
-[INFO]: GL texture 21 was destroyed!
-[INFO]: GL texture 18 was destroyed!
 [INFO]: GL texture 22 was destroyed!
 [INFO]: GL texture 23 was destroyed!
-[INFO]: GL geometry buffer was destroyed - VAO: 5!
-[INFO]: GL geometry buffer was destroyed - VAO: 8!
-[INFO]: GL geometry buffer was destroyed - VAO: 11!
-[INFO]: GL geometry buffer was destroyed - VAO: 7!
-[INFO]: GL geometry buffer was destroyed - VAO: 10!
-[INFO]: GL geometry buffer was destroyed - VAO: 12!
+[INFO]: GL texture 24 was destroyed!
+[INFO]: GL texture 21 was destroyed!
+[INFO]: GL texture 25 was destroyed!
+[INFO]: GL texture 26 was destroyed!
 [INFO]: GL geometry buffer was destroyed - VAO: 9!
 [INFO]: GL geometry buffer was destroyed - VAO: 6!
-[INFO]: GL texture 1 was destroyed!
-[INFO]: GL texture 13 was destroyed!
+[INFO]: GL geometry buffer was destroyed - VAO: 11!
+[INFO]: GL geometry buffer was destroyed - VAO: 7!
+[INFO]: GL geometry buffer was destroyed - VAO: 8!
+[INFO]: GL geometry buffer was destroyed - VAO: 12!
+[INFO]: GL geometry buffer was destroyed - VAO: 5!
+[INFO]: GL geometry buffer was destroyed - VAO: 10!
+[INFO]: GL texture 29 was destroyed!
 [INFO]: GL texture 16 was destroyed!
+[INFO]: GL texture 27 was destroyed!
+[INFO]: GL texture 28 was destroyed!
 [INFO]: GL texture 17 was destroyed!
 [INFO]: GL texture 14 was destroyed!
