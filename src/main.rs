@@ -34,32 +34,140 @@ struct InputController {
     move_left: bool,
     move_right: bool,
     pitch: f32,
-    yaw: f32
+    yaw: f32,
 }
 
 struct Player {
     pivot: Handle<Node>,
     camera: Handle<Node>,
     rigid_body: RigidBodyHandle,
-    controller: InputController
+    controller: InputController,
+}
+async fn create_skybox(resource_manager: ResourceManager) -> SkyBox {
+    // Load skybox textures in parallel.
+    let (front, back, left, right, top, bottom) = rg3d::futures::join!(
+        resource_manager.request_texture("assets/textures/skybox/front.jpg"),
+        resource_manager.request_texture("assets/textures/skybox/back.jpg"),
+        resource_manager.request_texture("assets/textures/skybox/left.jpg"),
+        resource_manager.request_texture("assets/textures/skybox/right.jpg"),
+        resource_manager.request_texture("assets/textures/skybox/up.jpg"),
+        resource_manager.request_texture("assets/textures/skybox/down.jpg")
+    );
+    // Unwrap everything.
+    let skybox = SkyBox {
+        front: Some(front.unwrap()),
+        back: Some(back.unwrap()),
+        left: Some(left.unwrap()),
+        right: Some(right.unwrap()),
+        top: Some(top.unwrap()),
+        bottom: Some(bottom.unwrap()),
+    };
+    // Set S and T coordinate wrap mode, ClampToEdge will remove any possible seams on edges
+    // of the skybox.
+    for skybox_texture in skybox.textures().iter().filter_map(|t| t.clone()) {
+        let mut data = skybox_texture.data_ref();
+        data.set_s_wrap_mode(TextureWrapMode::ClampToEdge);
+        data.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
+    }
+
+    skybox
 }
 
 impl Player {
-    fn new(scene: &mut Scene) -> Self {
+    async fn new(scene: &mut Scene, resource_manager: ResourceManager) -> Self {
         let camera = CameraBuilder::new(
-            BaseBuilder::new()
-            .with_local_transform(
+            BaseBuilder::new().with_local_transform(
                 TransformBuilder::new()
-                .with_local_position(
-                    Vector3::new(0.0,0.25,0.0))
-                    .build()))
-                    .build(&mut scene.graph);
+                    .with_local_position(Vector3::new(0.0, 0.25, 0.0))
+                    .build(),
+            ),
+        )
+        .with_skybox(create_skybox(resource_manager).await)
+        .build(&mut scene.graph);
+        let pivot = BaseBuilder::new()
+            .with_children(&[camera])
+            .build(&mut scene.graph);
+        let rigid_body_handle = scene.physics.add_body(
+            RigidBodyBuilder::new_dynamic()
+                .lock_rotations()
+                .translation(0.0, 1.0, -1.0)
+                .build(),
+        );
+        scene.physics.add_collider(
+            ColliderBuilder::capsule_y(0.25, 0.2).build(),
+            rigid_body_handle,
+        );
+        scene.physics_binder.bind(pivot, rigid_body_handle);
+        Self {
+            pivot,
+            camera,
+            rigid_body: rigid_body_handle,
+            controller: Default::default(),
+        }
     }
     fn update(&mut self, scene: &mut Scene) {
-        todo!()
+        scene.graph[self.camera].local_transform_mut().set_rotation(
+            UnitQuaternion::from_axis_angle(&Vector3::x_axis(), self.controller.pitch.to_radians()),
+        );
+        let pivot = &mut scene.graph[self.pivot];
+        let body = scene
+            .physics
+            .bodies
+            .get_mut(self.rigid_body.into())
+            .unwrap();
+        let mut velocity = Vector3::new(0.0, body.linvel().y, 0.0);
+        if self.controller.move_forward {
+            velocity += pivot.look_vector();
+        }
+        if self.controller.move_backward {
+            velocity -= pivot.look_vector();
+        }
+        if self.controller.move_left {
+            velocity += pivot.side_vector();
+        }
+        if self.controller.move_right {
+            velocity -= pivot.side_vector();
+        }
+        body.set_linvel(velocity, true);
+        let mut position = *body.position();
+        position.rotation =
+            UnitQuaternion::from_axis_angle(&Vector3::y_axis(), self.controller.yaw.to_radians());
+        body.set_position(position, true);
     }
     fn process_input_event(&mut self, event: &Event<()>) {
-        todo!()
+        match event {
+            Event::WindowEvent { event, .. } => {
+                if let WindowEvent::KeyboardInput { input, .. } = event {
+                    if let Some(key_code) = input.virtual_keycode {
+                        match key_code {
+                            VirtualKeyCode::W => {
+                                self.controller.move_forward = input.state == ElementState::Pressed;
+                            }
+                            VirtualKeyCode::S => {
+                                self.controller.move_backward =
+                                    input.state == ElementState::Pressed;
+                            }
+                            VirtualKeyCode::A => {
+                                self.controller.move_left = input.state == ElementState::Pressed;
+                            }
+                            VirtualKeyCode::D => {
+                                self.controller.move_right = input.state == ElementState::Pressed;
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+            }
+            Event::DeviceEvent { event, .. } => {
+                if let DeviceEvent::MouseMotion { delta } = event {
+                    self.controller.yaw -= delta.0 as f32;
+
+                    self.controller.pitch =
+                        (self.controller.pitch + delta.1 as f32).clamp(-90.0, 90.0);
+                }
+            }
+            _ => (),
+        }
     }
 }
 
@@ -82,17 +190,15 @@ impl Game {
             .unwrap()
             .instantiate_geometry(&mut scene);
         Self {
-            player: Player::new(&mut scene),
+            player: Player::new(&mut scene, engine.resource_manager.clone()).await,
             scene: engine.scenes.add(scene),
         }
-
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, engine: &mut GameEngine) {
         self.player.update(&mut engine.scenes[self.scene]);
     }
 }
-
 
 fn main() {
     // Configure main window first.
@@ -125,7 +231,7 @@ fn main() {
                     elapsed_time += TIMESTEP;
 
                     // Run our game's logic.
-                    game.update();
+                    game.update(&mut engine);
 
                     // Update engine each frame.
                     engine.update(TIMESTEP);
