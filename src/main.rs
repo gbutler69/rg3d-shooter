@@ -1,24 +1,40 @@
+mod message;
+mod player;
+mod weapon;
+
 use rg3d::{
     core::{
         algebra::{UnitQuaternion, Vector3},
-        pool::Handle,
+        color::Color,
+        math::ray::Ray,
+        pool::{Handle, Pool},
     },
-    engine::{resource_manager::ResourceManager, Engine},
-    event::{DeviceEvent, ElementState, Event, VirtualKeyCode, WindowEvent},
+    engine::Engine,
+    event::{Event, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     gui::node::StubNode,
-    physics::{dynamics::RigidBodyBuilder, geometry::ColliderBuilder},
-    resource::texture::TextureWrapMode,
+    renderer::surface::{SurfaceBuilder, SurfaceSharedData},
     scene::{
         base::BaseBuilder,
-        camera::{CameraBuilder, SkyBox},
-        node::Node,
+        graph::Graph,
+        mesh::{MeshBuilder, RenderPath},
+        physics::RayCastOptions,
         transform::TransformBuilder,
-        RigidBodyHandle, Scene,
+        Scene,
     },
     window::WindowBuilder,
 };
-use std::time;
+use std::{
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Arc, RwLock,
+    },
+    time,
+};
+
+use message::Message;
+use player::Player;
+use weapon::Weapon;
 
 // Create our own engine type aliases. These specializations are needed, because the engine
 // provides a way to extend UI with custom nodes and messages.
@@ -27,153 +43,12 @@ type GameEngine = Engine<(), StubNode>;
 // Our game logic will be updated at 60 Hz rate.
 const TIMESTEP: f32 = 1.0 / 60.0;
 
-#[derive(Default)]
-struct InputController {
-    move_forward: bool,
-    move_backward: bool,
-    move_left: bool,
-    move_right: bool,
-    pitch: f32,
-    yaw: f32,
-}
-
-struct Player {
-    pivot: Handle<Node>,
-    camera: Handle<Node>,
-    rigid_body: RigidBodyHandle,
-    controller: InputController,
-}
-async fn create_skybox(resource_manager: ResourceManager) -> SkyBox {
-    // Load skybox textures in parallel.
-    let (front, back, left, right, top, bottom) = rg3d::futures::join!(
-        resource_manager.request_texture("assets/textures/skybox/front.jpg"),
-        resource_manager.request_texture("assets/textures/skybox/back.jpg"),
-        resource_manager.request_texture("assets/textures/skybox/left.jpg"),
-        resource_manager.request_texture("assets/textures/skybox/right.jpg"),
-        resource_manager.request_texture("assets/textures/skybox/up.jpg"),
-        resource_manager.request_texture("assets/textures/skybox/down.jpg")
-    );
-    // Unwrap everything.
-    let skybox = SkyBox {
-        front: Some(front.unwrap()),
-        back: Some(back.unwrap()),
-        left: Some(left.unwrap()),
-        right: Some(right.unwrap()),
-        top: Some(top.unwrap()),
-        bottom: Some(bottom.unwrap()),
-    };
-    // Set S and T coordinate wrap mode, ClampToEdge will remove any possible seams on edges
-    // of the skybox.
-    for skybox_texture in skybox.textures().iter().filter_map(|t| t.clone()) {
-        let mut data = skybox_texture.data_ref();
-        data.set_s_wrap_mode(TextureWrapMode::ClampToEdge);
-        data.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
-    }
-
-    skybox
-}
-
-impl Player {
-    async fn new(scene: &mut Scene, resource_manager: ResourceManager) -> Self {
-        let camera = CameraBuilder::new(
-            BaseBuilder::new().with_local_transform(
-                TransformBuilder::new()
-                    .with_local_position(Vector3::new(0.0, 0.25, 0.0))
-                    .build(),
-            ),
-        )
-        .with_skybox(create_skybox(resource_manager).await)
-        .build(&mut scene.graph);
-        let pivot = BaseBuilder::new()
-            .with_children(&[camera])
-            .build(&mut scene.graph);
-        let rigid_body_handle = scene.physics.add_body(
-            RigidBodyBuilder::new_dynamic()
-                .lock_rotations()
-                .translation(0.0, 1.0, -1.0)
-                .build(),
-        );
-        scene.physics.add_collider(
-            ColliderBuilder::capsule_y(0.25, 0.2).build(),
-            rigid_body_handle,
-        );
-        scene.physics_binder.bind(pivot, rigid_body_handle);
-        Self {
-            pivot,
-            camera,
-            rigid_body: rigid_body_handle,
-            controller: Default::default(),
-        }
-    }
-    fn update(&mut self, scene: &mut Scene) {
-        scene.graph[self.camera].local_transform_mut().set_rotation(
-            UnitQuaternion::from_axis_angle(&Vector3::x_axis(), self.controller.pitch.to_radians()),
-        );
-        let pivot = &mut scene.graph[self.pivot];
-        let body = scene
-            .physics
-            .bodies
-            .get_mut(self.rigid_body.into())
-            .unwrap();
-        let mut velocity = Vector3::new(0.0, body.linvel().y, 0.0);
-        if self.controller.move_forward {
-            velocity += pivot.look_vector();
-        }
-        if self.controller.move_backward {
-            velocity -= pivot.look_vector();
-        }
-        if self.controller.move_left {
-            velocity += pivot.side_vector();
-        }
-        if self.controller.move_right {
-            velocity -= pivot.side_vector();
-        }
-        body.set_linvel(velocity, true);
-        let mut position = *body.position();
-        position.rotation =
-            UnitQuaternion::from_axis_angle(&Vector3::y_axis(), self.controller.yaw.to_radians());
-        body.set_position(position, true);
-    }
-    fn process_input_event(&mut self, event: &Event<()>) {
-        match event {
-            Event::WindowEvent { event, .. } => {
-                if let WindowEvent::KeyboardInput { input, .. } = event {
-                    if let Some(key_code) = input.virtual_keycode {
-                        match key_code {
-                            VirtualKeyCode::W => {
-                                self.controller.move_forward = input.state == ElementState::Pressed;
-                            }
-                            VirtualKeyCode::S => {
-                                self.controller.move_backward =
-                                    input.state == ElementState::Pressed;
-                            }
-                            VirtualKeyCode::A => {
-                                self.controller.move_left = input.state == ElementState::Pressed;
-                            }
-                            VirtualKeyCode::D => {
-                                self.controller.move_right = input.state == ElementState::Pressed;
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-            }
-            Event::DeviceEvent { event, .. } => {
-                if let DeviceEvent::MouseMotion { delta } = event {
-                    self.controller.yaw -= delta.0 as f32;
-
-                    self.controller.pitch =
-                        (self.controller.pitch + delta.1 as f32).clamp(-90.0, 90.0);
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
 struct Game {
     scene: Handle<Scene>,
     player: Player,
+    weapons: Pool<Weapon>,
+    receiver: Receiver<Message>,
+    sender: Sender<Message>,
 }
 
 impl Game {
@@ -189,20 +64,150 @@ impl Game {
             .await
             .unwrap()
             .instantiate_geometry(&mut scene);
+        let (sender, receiver) = mpsc::channel();
+        let mut player =
+            Player::new(&mut scene, engine.resource_manager.clone(), sender.clone()).await;
+        let weapon = Weapon::new(&mut scene, engine.resource_manager.clone()).await;
+        scene.graph.link_nodes(weapon.model(), player.weapon_pivot);
+        let mut weapons = Pool::new();
+        player.weapon = weapons.spawn(weapon);
         Self {
-            player: Player::new(&mut scene, engine.resource_manager.clone()).await,
+            player,
             scene: engine.scenes.add(scene),
+            weapons,
+            receiver,
+            sender,
         }
     }
 
-    pub fn update(&mut self, engine: &mut GameEngine) {
+    pub fn update(&mut self, engine: &mut GameEngine, dt: f32) {
         self.player.update(&mut engine.scenes[self.scene]);
+        for weapon in self.weapons.iter_mut() {
+            weapon.update(dt)
+        }
+        while let Ok(message) = self.receiver.try_recv() {
+            match message {
+                Message::ShootWeapon { weapon } => {
+                    self.shoot_weapon(weapon, engine);
+                }
+            }
+        }
+    }
+
+    fn shoot_weapon(&mut self, weapon: Handle<Weapon>, engine: &mut GameEngine) {
+        let weapon = &mut self.weapons[weapon];
+
+        if weapon.can_shoot() {
+            weapon.shoot();
+
+            let scene = &mut engine.scenes[self.scene];
+
+            let weapon_model = &scene.graph[weapon.model()];
+
+            // Make a ray that starts at the weapon's position in the world and look toward
+            // "look" vector of the weapon.
+            let ray = Ray::new(
+                scene.graph[weapon.shot_point()].global_position(),
+                weapon_model.look_vector().scale(1000.0),
+            );
+
+            let mut intersections = Vec::new();
+
+            scene.physics.cast_ray(
+                RayCastOptions {
+                    ray,
+                    max_len: ray.dir.norm(),
+                    groups: Default::default(),
+                    sort_results: true, // We need intersections to be sorted from closest to furthest.
+                },
+                &mut intersections,
+            );
+
+            // Ignore intersections with player's capsule.
+            let trail_length = if let Some(intersection) = intersections
+                .iter()
+                .find(|i| i.collider != self.player.collider)
+            {
+                //
+                // TODO: Add code to handle intersections with bots.
+                //
+
+                // For now just apply some force at the point of impact.
+                let collider = scene
+                    .physics
+                    .colliders
+                    .get(intersection.collider.into())
+                    .unwrap();
+                scene
+                    .physics
+                    .bodies
+                    .get_mut(collider.parent())
+                    .unwrap()
+                    .apply_force_at_point(
+                        ray.dir.normalize().scale(10.0),
+                        intersection.position,
+                        true,
+                    );
+
+                // Trail length will be the length of line between intersection point and ray origin.
+                (intersection.position.coords - ray.origin).norm()
+            } else {
+                // Otherwise trail length will be just the ray length.
+                ray.dir.norm()
+            };
+
+            Self::create_shot_trail(&mut scene.graph, ray.origin, ray.dir, trail_length);
+        }
+    }
+
+    fn create_shot_trail(
+        graph: &mut Graph,
+        origin: Vector3<f32>,
+        direction: Vector3<f32>,
+        trail_length: f32,
+    ) {
+        let transform = TransformBuilder::new()
+            .with_local_position(origin)
+            .with_local_scale(Vector3::new(0.0025, 0.0025, trail_length))
+            .with_local_rotation(UnitQuaternion::face_towards(&direction, &Vector3::y()))
+            .build();
+
+        // Create unit cylinder with caps that faces toward Z axis.
+        let shape = Arc::new(RwLock::new(SurfaceSharedData::make_cylinder(
+            6,     // Count of sides
+            1.0,   // Radius
+            1.0,   // Height
+            false, // No caps are needed.
+            // Rotate vertical cylinder around X axis to make it face towards Z axis
+            UnitQuaternion::from_axis_angle(&Vector3::x_axis(), 90.0f32.to_radians())
+                .to_homogeneous(),
+        )));
+
+        MeshBuilder::new(
+            BaseBuilder::new()
+                .with_local_transform(transform)
+                // Shot trail should live ~0.25 seconds, after that it will be automatically
+                // destroyed.
+                .with_lifetime(0.25),
+        )
+        .with_surfaces(vec![SurfaceBuilder::new(shape)
+            // Set yellow-ish color.
+            .with_color(Color::from_rgba(255, 255, 0, 120))
+            .build()])
+        // Do not cast shadows.
+        .with_cast_shadows(false)
+        // Make sure to set Forward render path, otherwise the object won't be
+        // transparent.
+        .with_render_path(RenderPath::Forward)
+        .build(graph);
     }
 }
 
 fn main() {
     // Configure main window first.
-    let window_builder = WindowBuilder::new().with_title("3D Shooter Tutorial");
+    let window_builder = WindowBuilder::new()
+        .with_maximized(true)
+        .with_title("3D Shooter Tutorial");
     // Create event loop that will be used to "listen" events from the OS.
     let event_loop = EventLoop::new();
 
@@ -231,7 +236,7 @@ fn main() {
                     elapsed_time += TIMESTEP;
 
                     // Run our game's logic.
-                    game.update(&mut engine);
+                    game.update(&mut engine, dt);
 
                     // Update engine each frame.
                     engine.update(TIMESTEP);
