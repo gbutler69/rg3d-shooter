@@ -6,10 +6,12 @@ use rg3d::{
     core::{
         algebra::{UnitQuaternion, Vector3},
         color::Color,
+        color_gradient::{ColorGradient, GradientPoint},
         math::ray::Ray,
+        numeric_range::NumericRange,
         pool::{Handle, Pool},
     },
-    engine::Engine,
+    engine::{resource_manager::ResourceManager, Engine},
     event::{Event, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     gui::node::StubNode,
@@ -18,6 +20,8 @@ use rg3d::{
         base::BaseBuilder,
         graph::Graph,
         mesh::{MeshBuilder, RenderPath},
+        node::Node,
+        particle_system::{BaseEmitterBuilder, ParticleSystemBuilder, SphereEmitterBuilder},
         physics::RayCastOptions,
         transform::TransformBuilder,
         Scene,
@@ -25,6 +29,7 @@ use rg3d::{
     window::WindowBuilder,
 };
 use std::{
+    path::Path,
     sync::{
         mpsc::{self, Receiver, Sender},
         Arc, RwLock,
@@ -83,7 +88,7 @@ impl Game {
     pub fn update(&mut self, engine: &mut GameEngine, dt: f32) {
         self.player.update(&mut engine.scenes[self.scene]);
         for weapon in self.weapons.iter_mut() {
-            weapon.update(dt)
+            weapon.update(dt, &mut engine.scenes[self.scene].graph)
         }
         while let Ok(message) = self.receiver.try_recv() {
             match message {
@@ -149,6 +154,18 @@ impl Game {
                         true,
                     );
 
+                let effect_orientation = if intersection.normal.normalize() == Vector3::y() {
+                    UnitQuaternion::from_axis_angle(&Vector3::y_axis(), 0.0)
+                } else {
+                    UnitQuaternion::face_towards(&intersection.normal, &Vector3::y())
+                };
+                Self::create_bullet_impact(
+                    &mut scene.graph,
+                    engine.resource_manager.clone(),
+                    intersection.position.coords,
+                    effect_orientation,
+                );
+
                 // Trail length will be the length of line between intersection point and ray origin.
                 (intersection.position.coords - ray.origin).norm()
             } else {
@@ -200,6 +217,57 @@ impl Game {
         // transparent.
         .with_render_path(RenderPath::Forward)
         .build(graph);
+    }
+
+    fn create_bullet_impact(
+        graph: &mut Graph,
+        resource_manager: ResourceManager,
+        pos: Vector3<f32>,
+        orientation: UnitQuaternion<f32>,
+    ) -> Handle<Node> {
+        // Create sphere emitter first.
+        let emitter = SphereEmitterBuilder::new(
+            BaseEmitterBuilder::new()
+                .with_max_particles(200)
+                .with_spawn_rate(1000)
+                .with_size_modifier_range(NumericRange::new(-0.01, -0.0125))
+                .with_size_range(NumericRange::new(0.0010, 0.025))
+                .with_x_velocity_range(NumericRange::new(-0.01, 0.01))
+                .with_y_velocity_range(NumericRange::new(0.030, 0.10))
+                .with_z_velocity_range(NumericRange::new(-0.01, 0.01))
+                .resurrect_particles(false),
+        )
+        .with_radius(0.01)
+        .build();
+
+        // Color gradient will be used to modify color of each particle over its lifetime.
+        let color_gradient = {
+            let mut gradient = ColorGradient::new();
+            gradient.add_point(GradientPoint::new(0.00, Color::from_rgba(255, 255, 0, 0)));
+            gradient.add_point(GradientPoint::new(0.05, Color::from_rgba(255, 160, 0, 255)));
+            gradient.add_point(GradientPoint::new(0.95, Color::from_rgba(255, 120, 0, 255)));
+            gradient.add_point(GradientPoint::new(1.00, Color::from_rgba(255, 60, 0, 0)));
+            gradient
+        };
+
+        // Create new transform to orient and position particle system.
+        let transform = TransformBuilder::new()
+            .with_local_position(pos)
+            .with_local_rotation(orientation)
+            .build();
+
+        // Finally create particle system with limited lifetime.
+        ParticleSystemBuilder::new(
+            BaseBuilder::new()
+                .with_lifetime(1.0)
+                .with_local_transform(transform),
+        )
+        .with_acceleration(Vector3::new(0.0, -10.0, 0.0))
+        .with_color_over_lifetime_gradient(color_gradient)
+        .with_emitters(vec![emitter])
+        // We'll use simple spark texture for each particle.
+        .with_texture(resource_manager.request_texture(Path::new("assets/textures/spark.png")))
+        .build(graph)
     }
 }
 
